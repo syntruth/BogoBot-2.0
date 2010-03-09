@@ -4,6 +4,7 @@ require "rubygems"
 
 # Ensure our local paths are loaded first.
 $LOAD_PATH.insert(0, "./lib")
+$LOAD_PATH.insert(0, "./lib/irc")
 
 # Ruby libs
 require "daemons"
