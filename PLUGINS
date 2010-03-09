@@ -1,0 +1,94 @@
+BogoBot Plugin How-To
+#####################
+
+The Basics
+----------
+
+A BogoBot plugin is simple a ruby file located in BogoBot's plugin
+directory (default: plugins/) that contains a subclass of 
+Plugin::PluginBase.  The plugin's initialize() method handles any 
+_pre-running_ setup and configuration, while the start() method is where
+the plugin actually starts to work, reads any passed-in config options, etc.
+
+It is also within the initialize() method that you give the name, author
+and version of the plugin, using methods of the same name:
+
+  def initialize
+    name "My Plugin!"
+    author "Syntruth"
+    version "1.0"
+  end
+
+A basic, bare-bones (but working) plugin is provided in the plugins
+directory called plugin_template.rb -- you can use this file as the
+starting point for your own plugins.
+
+The Config class
+----------------
+
+Every plugin is passed an instance of the Config::Config class to its
+start() method.  This is a simple container class that is typically used
+with it's get() and set() methods. This instance does not necessarily mean
+that the plugin has a config file and it was read; if the file doesn't
+exist, the instance will represent an empty config file. The most useful
+methods are these:
+
+  has_read? -- has the config file been read?  This will be true if the
+  file exists and the bot opened it. If the file existed, then of course
+  it has not been read yet.
+
+  on_disk? -- is the config file on the physical disk? If the config doesn't
+  exist, this is a safe method to check before trying to do anything with it.
+  Once the file has been saved, this will return as true.
+
+  get(key[, default_value]) -- this will retrieve a key from the config. If
+  the key does not exist, it will return nil, unless you give the second,
+  optional argument, in which case, that value will be returned if the key
+  does not exist.
+
+  set(key, value) -- sets the key to value.  Only strings and arrays are
+  handled by the Config class.
+
+For more, I suggest reading over the Config class in lib/config.rb.
+
+Handy BogoBot Plugin Helpers
+----------------------------
+
+There are a few helper methods that are useful to know that are exposed by
+Bogobot:
+
+  get_storage_path(filename) -- this will return the string path of where 
+  a plugin's storage file (for non-config data) can be kept. But, perhaps
+  even better is...
+
+  get_storage_file(filename, mode) -- this method takes a block, that 
+  should accept an open file object, just like ruby's open() method. This
+  file will be closed at the end of the block. If there is an issue with
+  opening the file, then nil is passed to the block instead, so make sure
+  to check for it.
+
+  get_format_string(options={}) -- if you need to wrap some outgoing message
+  in font colors or format, such a bold, you can call this method with a hash
+  of options. It will return a format string to be used with the % operator
+  that you can insert your message into. If there is an error, it returns
+  just '%s' instead. The options are these:
+
+    Formats: :bold, :fixed, :italic, :reverse, :underline
+
+    In the hash, set those as keys with the value of true.
+
+    Colors: :white, :black, :dark_blue, :dark_green, :light_red,
+    :dark_red, :magenta, :orange, :yellow, :light_green, :cyan, 
+    :light_blue, :light_magenta, :grey, :light_grey
+
+    For colors, you set a key of :color, :foreground or :fg for the 
+    foreground color, and :background or :bg for the background color, the
+    value being one of the colors above.
+
+    Thus, to set a bold text, with blue color on a white background:
+
+    options = {:bold => true, :fg => :light_blue, :bg => :white}
+
+  is_owner?(nick) -- this will return true if the given IRC nick is a
+  logged in owner of the bot.
+

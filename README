@@ -1,0 +1,63 @@
+BogoBot Version 2.0.1
+#####################
+
+Created by Randy "syntruth" Carnahan
+
+BogoBot is a Ruby-based IRC bot, that can load plugins to add custom
+commands and irc-event handlers.  It is designed to be modular, though
+probably not as fast in execution speed as C-based IRC bots. (That said,
+it seems fast enough for almost all uses on my server.)
+
+BogoBot is very limited in it's core functionality; all interesting
+features are meant to come from the plugin system and not from within
+the bot itself. Various plugins have been made for dice rolling, magic
+8-ball-esque replies, and even auto-op'ing users on a server that does
+not have services available.
+
+Plugins are easy to code, with as much of the heavy lifting done by the
+bot itself, exposing helper methods to do things like open storage files
+or obtain a text format for bold, colored text.
+
+BogoBot uses a custom-hacked version of the Ruby-IRC library. I have
+extended this library to do add two things: formatted IRC text and 
+handling of CTCP events. (IRCTextUtil and IRCCTCP respecitively.) I'll
+try to get around to submitting these changes to the Ruby-IRC authors
+for their approval and hopeful inclusion eventually.
+
+The only gem required is the Daemons gem:
+
+    gem install daemons
+
+Then, to launch the bot, change to it's working directory and run the
+bogobot.rb file.  (It's set up to use /usr/bin/env ruby if you make it
+executable.)
+
+It has the following options:
+
+-c, --config=
+  Specifies the config file to use for the bot. Defaults to 'default.conf'.
+  You do not need to put the '.conf' on the end.
+
+-d, --daemon
+  Puts the Bot into the background. The default is to not daemonize the bot.
+
+-h, --help
+  Prints the help text.  You are reading this now. ;)
+
+For help on writing a plugin, please see the PLUGIN file.
+
+Owners
+------
+
+The bot requires at least _one_ owner defined in the bot's configuration
+file. This entry is in the following syntax:
+
+nick:password
+
+...where nick is the owner's nick; this is CASE SENSITIVE.
+
+...and the password is the md5 hex-value of the password.
+
+At this time, that is all there is. Eventually I hope to have nick-mask
+and host-mask checking as well.
+
