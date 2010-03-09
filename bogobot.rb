@@ -119,6 +119,7 @@ class BogoBot < IRC
     if @owners.empty?
       self.error "There are no owners in #{config_file} or " + 
         "there is an issue with their password!"
+      exit
     end
 
     # Set our required parameters to get connected...
