@@ -2,8 +2,7 @@ class TestPlugin < Plugin::PluginBase
 
   # Set up and pre-running configuration
   # happens here
-  def initialize
-  
+  def initialize  
     name "My Test Plugin"
     author "Ruby Dude"
     version "0.1"
@@ -43,6 +42,11 @@ class TestPlugin < Plugin::PluginBase
     # :owner:   Boolean value; is this an owner-only command?
     # :private: Boolean value; does this command require it to be issued
     #           in a private message to the bot?
+    # :helpstr: This is the string that is diplayed when the help command
+    #           is used for this command. The help string has two special
+    #           placeholders: {cmd} and {bot}; cmd will be filled in with
+    #           the first command-token and bot will be filled in with
+    #           the bot's name.
     #
     # The block given to add_command() will receive two arguments:
     #
@@ -51,7 +55,9 @@ class TestPlugin < Plugin::PluginBase
     #
     # Although not required, typically you would pass control over to an 
     # instance method.
-    bot.add_command(self, "test", false, false) do |bot, event|
+
+    help_str = "{cmd}test -- Calls {cmd} test on {bot}!"
+    bot.add_command(self, "test", false, false, help_str) do |bot, event|
       self.do_test_command(bot, event)
     end
 
@@ -68,6 +74,7 @@ class TestPlugin < Plugin::PluginBase
     # The passed in block will receive the the event object, and again
     # typically you'd hand off control to a class method, though this
     # is not required.
+
     bot.add_handler(self, :pubmsg) do |event|
       self.do_pubmsg(bot, event)
     end
