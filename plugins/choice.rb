@@ -20,7 +20,7 @@ class Choice < Plugin::PluginBase
       "{cmd}will I get lucky?"
 
     @words.each do |word|
-      bot.add_command(self, word, false, choice_help) do |bot, event|
+      bot.add_command(self, word, false, false, choice_help) do |bot, event|
         self.do_choice(bot, event)
       end
     end
