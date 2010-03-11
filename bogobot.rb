@@ -152,14 +152,11 @@ class BogoBot < IRC
     # safe to join channels.
     # TODO: see if there is a more common way of knowing when it's
     # okay to join channels.
-    IRCEvent.add_handler('endofmotd') do |event|
-      do_auto_joins()
-      true
-    end
-
-    IRCEvent.add_handler('nomotd') do |event|
-      do_auto_joins()
-      true
+    ['endofmotd', 'nomotd'].each do |motd|
+      IRCEvent.add_handler(motd) do |event|
+        do_auto_joins()
+        true
+      end
     end
 
     ######################
@@ -319,8 +316,8 @@ class BogoBot < IRC
 
   # This method is used to add an IRC event handler. Plugins _must_
   # pass themselves as the first argument; this is used to keep
-  # track of the plugin's handlers. the bot passes itself, but has
-  # no affect.
+  # track of the plugin's handlers.
+  #
   # Parameters:
   # :event_type:  This is either a string or symbol for the irc event
   #               that is being requrested to be handled, such as 
@@ -348,14 +345,18 @@ class BogoBot < IRC
           @plugins_loaded[plugin_name][:handlers][event] = []
         end
 
-        @plugins_loaded[plugin_name][:handlers][event].push(handler)
 
-        IRCEvent.add_handler(event) do |e|
+        hid = IRCEvent.add_handler(event) do |e|
           handler.call(e)
         end
+
+        @plugins_loaded[plugin_name][:handlers][event].push(hid)
       end
+
+      return hid
     else
       bot.error "add_handler given an unknown plugin: #{plugin_name}"
+      return nil
     end
   end
 
@@ -387,8 +388,8 @@ class BogoBot < IRC
   #              handler, make sure you make a reference to it, since
   #              this will use the id's to compare.
   #              XXX: Um, how is a plugin to do this? Must revisit this.
-  def remove_handler(event_type, handler)
-    IRCEvent.remove_handler(event_type, handler)
+  def remove_handler(event_type, handler_id)
+    IRCEvent.remove_handler(event_type, handler_id)
   end
 
   # Removes all of a plugin's event handlers for a given plugin.
@@ -400,8 +401,8 @@ class BogoBot < IRC
 
     if @plugins_loaded.has_key?(plugin_name)
       @plugins_loaded[plugin_name][:handlers].each do |event_type, handlers|
-        handlers.each do |handler|
-          self.remove_handler(event_type, handler)
+        handlers.each do |handler_id|
+          self.remove_handler(event_type, handler_id)
         end
       end
       @plugins_loaded[plugin_name][:handlers].clear()
