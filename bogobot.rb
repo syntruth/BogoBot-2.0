@@ -19,13 +19,14 @@ require 'lib/init'
 
 BOT_VERSION = "2.0.1"
 
-pwd = Dir.pwd()
+BOT_PATH = Dir.pwd()
 
 # Set our local paths for bot/plugin/storage files.
-CONFIG_DIR = File.join(pwd, "conf")
-LOG_DIR    = File.join(pwd, "logs")
-PLUGIN_DIR = File.join(pwd, "plugins")
-STORE_DIR  = File.join(pwd, "store")
+CONFIG_DIR = File.join(BOT_PATH, "conf")
+LOG_DIR    = File.join(BOT_PATH, "logs")
+PLUGIN_DIR = File.join(BOT_PATH, "plugins")
+EXTEND_DIR = File.join(BOT_PATH, "extensions")
+STORE_DIR  = File.join(BOT_PATH, "store")
 
 # Usage text.
 USAGE = <<EOF
@@ -107,7 +108,7 @@ class BogoBot < IRC
     # include that owner.
     all_owners.each do |owner|
       nick, pw = owner.split(/\:/, 2)
-      if pw.length != 32
+      if not pw.match(/^[A-Fa-f0-9]{32}$/)
         self.error "#{nick} password is not md5. Not added."
         next
       end
@@ -295,10 +296,12 @@ class BogoBot < IRC
   # of course, the instance of the bot, while event is the irc event
   # that triggered the command.
   def add_command(plugin, cmd_str, owner_only, is_priv, help, &block)
-    plugin_name = plugin.class.to_s.downcase()
     
     # Handle plugin commands so they can be removed later.
     if plugin != self
+
+      plugin_name = plugin.class.to_s.downcase()
+
       if @plugins_loaded.has_key?(plugin_name)
         @plugins_loaded[plugin_name][:commands].push(cmd_str)
       else
@@ -310,7 +313,7 @@ class BogoBot < IRC
     if cmd_str.length >= 2
       @commands[cmd_str] = UserCommand.new(owner_only, help, is_priv, block)
     else
-      self.error("Command #{cmd_str} is less than 2 characters long.")
+      self.error("Command #{cmd_str} is less than 2 characters long!")
     end
   end
 
