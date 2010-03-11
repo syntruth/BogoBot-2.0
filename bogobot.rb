@@ -53,6 +53,7 @@ class BogoBot < IRC
   include IRCTextUtil
 
   attr_reader :log
+  attr_reader :nick
 
   # This configures most of the bot but does _not_ connect
   # the bot to the server specified. (See connect() for that.)
@@ -345,15 +346,14 @@ class BogoBot < IRC
           @plugins_loaded[plugin_name][:handlers][event] = []
         end
 
-
         hid = IRCEvent.add_handler(event) do |e|
           handler.call(e)
         end
 
         @plugins_loaded[plugin_name][:handlers][event].push(hid)
-      end
 
-      return hid
+        return hid
+      end
     else
       bot.error "add_handler given an unknown plugin: #{plugin_name}"
       return nil

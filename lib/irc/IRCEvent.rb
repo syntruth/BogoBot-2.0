@@ -111,7 +111,7 @@ class IRCEvent
       event_type = event_type.to_s.downcase()
       @@handlers[event_type] = [] if not @@handlers.has_key?(event_type)
       @@handlers[event_type].push(block)
-      return block.id
+      return block.object_id
     rescue Exception
       return false
     end
