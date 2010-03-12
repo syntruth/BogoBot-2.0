@@ -76,7 +76,7 @@ class BogoBot < IRC
     begin
       @config = Config::Config.new(config_file)
     rescue Config::ConfigError => err
-      self.error("!!!   Error with config   !!!\n")
+      self.error("!!!   Error with config   !!!\n", err)
       raise
     end
 
@@ -110,7 +110,7 @@ class BogoBot < IRC
     all_owners.each do |owner|
       nick, pw = owner.split(/\:/, 2)
       if not pw.match(/^[A-Fa-f0-9]{32}$/)
-        self.error "#{nick} password is not md5. Not added."
+        self.error("#{nick} password is not md5. Not added.")
         next
       end
       @owners[nick] = Owner.new(nick, pw)
@@ -256,7 +256,11 @@ class BogoBot < IRC
 
   # If @log is available, sends the message passed there,
   # else outputs to $strerr.
-  def error(msg)
+  def error(msg, error_object=nil)
+    if error_object and error_object.is_a?(Exception)
+      msg += "\n#{err}\n#{err.backtrace.join('\n')}"
+    end
+
     if @log.nil?
       $stderr.write(msg + "\n")
     else
@@ -355,7 +359,7 @@ class BogoBot < IRC
         return hid
       end
     else
-      bot.error "add_handler given an unknown plugin: #{plugin_name}"
+      bot.error("add_handler given an unknown plugin: #{plugin_name}")
       return nil
     end
   end
@@ -504,7 +508,12 @@ class BogoBot < IRC
 
   def do_join(event)
     channel = parse_message(event).strip()
-    channel = "#" + channel if "#&+!".index(channel[0].chr()).nil?
+
+    return if channel.empty?
+
+    # If not a channel, assume standard public channel.
+    channel = "#" + channel if not IRCChannel.is_channel?(channel)
+
     add_channel(channel)
   end
 
@@ -615,7 +624,7 @@ class BogoBot < IRC
 
   def do_part(event)
     channel = parse_message(event).strip()
-    channel = "#" + channel if "#&+!".index(channel[0].chr).nil?
+    channel = "#" + channel if not IRCChannel.is_channel?(channel)
     part(channel)
   end
 
@@ -651,7 +660,7 @@ class BogoBot < IRC
       block.call(fp)
       fp.close()
     rescue Exception => err
-      self.error "Error with storage file: #{err}"
+      self.error("Error with storage file.", err)
       block.call(nil)
     end
   end
@@ -710,7 +719,7 @@ class BogoBot < IRC
       end
       return true
     rescue Exception => err
-      self.error "Error handling #{cmd_str}!: #{err}\n    #{err.backtrace.join("\n    ")}"
+      self.error("Error handling #{cmd_str}!", err)
       self.reply(event, "There was an error running the #{cmd_str} command. Check the logs.")
       return false
     end
@@ -731,7 +740,7 @@ class BogoBot < IRC
           load plugin_file
           return true
         rescue Exception => err
-          self.error "Error loading #{plugin_file}: #{err}    " + err.backtrace.join("\n    ")
+          self.error("Error loading #{plugin_file}!", err)
         end
       else
         self.error "Can not find #{plugin_file} to load."
@@ -752,7 +761,7 @@ class BogoBot < IRC
       @plugins_loaded.delete(plugin_name)
       return true
     rescue Exception => err
-      self.error "Error unloading #{plugin_file}: #{err}    " + err.backtrace.join("\n    ")
+      self.error("Error unloading #{plugin_file}!", err)
     end
   end
 
@@ -808,7 +817,7 @@ class BogoBot < IRC
 
     rescue Exception => err
       @plugins_loaded.delete(plugin_name)
-      self.error("Error starting plugin: #{plugin_name} => #{err}    \n" + err.backtrace.join("\n    "))
+      self.error("Error starting plugin: #{plugin_name}!", err)
       return false
     end
   end
