@@ -119,7 +119,7 @@ class IRCEvent
 
   def IRCEvent.remove_handler(event_type, block_obj_id)
     event_type = event_type.to_s.downcase() if event_type.is_a?(Symbol)
-    @@handlers[event_type].reject! { |block| block.id == block_obj_id }
+    @@handlers[event_type].reject! { |block| block.object_id == block_obj_id }
   end
 
   # Process this event, preforming which ever handler and callback is specified
