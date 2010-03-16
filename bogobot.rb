@@ -730,6 +730,11 @@ class BogoBot < IRC
   # actual plugin class. See start_plugin().
   def load_plugin(plugin_name=nil)
 
+    # We refresh the rubygem paths, just in case the plugin needs
+    # to load a new library that has been installed since we started
+    # running.
+    Gem.refresh()
+
     if plugin_name.is_a?(String) and plugin_name.any?
       plugin_name.downcase!
 
