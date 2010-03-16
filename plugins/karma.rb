@@ -29,8 +29,10 @@ class Karma < Plugin::PluginBase
 
     karma_help = "{cmd}karma <subject> -- returns the karma for subject. " +
       "You can give a subject karma by simply giving the subject followed " +
-      "but either ++ for good karma, or -- for bad karma. For example: " + 
-      "coffee++ or Syn-- or summer glau++"
+      "immediately by either ++ or -- for good or bad karma. Optionally, " + 
+      "you can give a modifier to karma in the range of 1 through 10. " +
+      "Karma can only be given in a public channel. " + 
+      "For example: coffee++ or Syn-- or summer glau++ or ruby++ 7"
 
     bot.add_command(self, "karma", false, false, karma_help) do |bot, event|
       self.do_karma(bot, event)
@@ -71,7 +73,7 @@ class Karma < Plugin::PluginBase
   end
 
   def do_karma(bot, event)
-    subject = bot.parse_message(event).strip.downcase()
+    subject = bot.parse_message(event).squeeze(" ").strip.downcase()
     
     if subject.any?
       karmas = self.get_karmas()
@@ -91,7 +93,6 @@ class Karma < Plugin::PluginBase
   def parse_karma(line="")
     match = KARMA_RE.match(line)
     if match
-
       parts = match.captures()
 
       subject = parts[0].squeeze(" ").strip.downcase()
