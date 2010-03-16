@@ -1,11 +1,11 @@
 class Karma < Plugin::PluginBase
 
-  KARMA_RE = /^([A-Za-z0-9]+?)([+]{2}|--)\s*/
+  KARMA_RE = /^([a-z0-9 ]+?[a-z0-9])(\+\+|--)\s*?(\d|10)?$/i
 
   def initialize
     name "Karma"
     author "Syn"
-    version "0.1"
+    version "0.5"
 
     @file = nil
   end
@@ -29,8 +29,8 @@ class Karma < Plugin::PluginBase
 
     karma_help = "{cmd}karma <subject> -- returns the karma for subject. " +
       "You can give a subject karma by simply giving the subject followed " +
-      "but either ++ for good karma, or -- for bad karma. Subjects must not " +
-      "have spaces. For example: coffee++ or Syn--"
+      "but either ++ for good karma, or -- for bad karma. For example: " + 
+      "coffee++ or Syn-- or summer glau++"
 
     bot.add_command(self, "karma", false, false, karma_help) do |bot, event|
       self.do_karma(bot, event)
@@ -92,10 +92,12 @@ class Karma < Plugin::PluginBase
     match = KARMA_RE.match(line)
     if match
 
-      subject, up_down = match.captures()
+      parts = match.captures()
 
-      subject = subject.downcase()
-      karma = (up_down == "++") ? 1 : -1
+      subject = parts[0].squeeze(" ").strip.downcase()
+      karma = parts[2].to_i.abs()
+      karma = 1 if karma.zero?
+      karma = -(karma) if parts[1] == '--'
 
       return [subject, karma]
     end
