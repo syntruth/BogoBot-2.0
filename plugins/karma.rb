@@ -5,7 +5,7 @@ class Karma < Plugin::PluginBase
   def initialize
     name "Karma"
     author "Syn"
-    version "0.5"
+    version "0.6"
 
     @file = nil
   end
@@ -27,12 +27,14 @@ class Karma < Plugin::PluginBase
       self.do_privmsg(bot, event)
     end
 
-    karma_help = "{cmd}karma <subject> -- returns the karma for subject. " +
+    karma_help = "{cmd}karma [:command|subject] -- " + 
+      "Commands are :top, :bottom, :average, and :stats. " +
+      "Top and Bottom will give the top and bottom 3 karmas." +
+      "If given a subject, will report the karma for that subject.\n" + 
       "You can give a subject karma by simply giving the subject followed " +
-      "immediately by either ++ or -- for good or bad karma. Optionally, " + 
-      "you can give a modifier to karma in the range of 1 through 10. " +
+      "immediately by either ++ or -- for good or bad karma. " +
       "Karma can only be given in a public channel. " + 
-      "For example: coffee++ or Syn-- or summer glau++ or ruby++ 7"
+      "For example: coffee++ or Syn-- or summer glau++"
 
     bot.add_command(self, "karma", false, false, karma_help) do |bot, event|
       self.do_karma(bot, event)
@@ -74,8 +76,11 @@ class Karma < Plugin::PluginBase
 
   def do_karma(bot, event)
     subject = bot.parse_message(event).squeeze(" ").strip.downcase()
-    
-    if subject.any?
+
+    if subject.match(/^:/)
+      cmd = subject.sub(/^:/, "").to_sym()
+      msg = karma_stats(cmd)
+    elsif subject.any?
       karmas = self.get_karmas()
       if karmas.has_key?(subject)
         msg = "The karma for #{subject} is: #{karmas[subject]}."
@@ -143,6 +148,38 @@ class Karma < Plugin::PluginBase
     karmas[subject] = 0 if not karmas.has_key?(subject)
     karmas[subject] += karma
     self.save_file(karmas)
+  end
+
+  def karma_stats(cmd=:top)
+    karmas = self.get_karmas()
+    msg = ""
+
+    # Converty to an array and sort, highest to
+    # lowest.
+    karma_array = karmas.to_a.sort do |k1, k2|
+      k2.last <=> k1.last
+    end
+
+    msg = case cmd
+    when :top
+      top = karma_array[0..2].collect do |k| 
+        "%s: %s" % [k.first, k.last]
+      end
+      "Top Karma Holders: " + top.join(", ")
+    when :bottom
+      bottom = karma_array.reverse[0..2].collect do |k| 
+        "%s: %s" % [k.first, k.last]
+      end
+      "Bottom Karma Holders: " + bottom.join(", ")
+    when :average
+      sum = karma_array.inject(0) {|t, k| t += k.last}
+      avg = sum / karma_array.length()
+      "The Average Karma is: %s" % avg
+    when :stats
+      "There are #{karma_array.length()} Karma entries."
+    end
+
+    return msg
   end
 
 end
