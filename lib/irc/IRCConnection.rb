@@ -42,7 +42,7 @@ class IRCConnection
   end
   
   def IRCConnection.create_tcp_socket(server, port)
-    @@socket = TCPsocket.open(server, port)
+    @@socket = TCPSocket.open(server, port)
     if block_given?
       yield
       @@socket.close

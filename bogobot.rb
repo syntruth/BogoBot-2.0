@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env ruby1.9
 
 require "rubygems"
 
@@ -12,7 +12,7 @@ require "English"
 require "getoptlong"
 require "logger"
 require "pathname"
-require "md5"
+require "digest/md5"
 
 # Local libs
 require 'lib/init'
@@ -74,8 +74,8 @@ class BogoBot < IRC
     config_file = File.join(CONFIG_DIR, config_file)
     
     begin
-      @config = Config::Config.new(config_file)
-    rescue Config::ConfigError => err
+      @config = SimpleConfig::SimpleConfig.new(config_file)
+    rescue SimpleConfig::SimpleConfigError => err
       self.error("!!!   Error with config   !!!\n", err)
       raise
     end
@@ -258,7 +258,7 @@ class BogoBot < IRC
   # else outputs to $strerr.
   def error(msg, error_object=nil)
     if error_object and error_object.is_a?(Exception)
-      msg += "\n#{err}\n#{err.backtrace.join('\n')}"
+      msg += "\n#{error_object}\n#{error_object.backtrace.join('\n')}"
     end
 
     if @log.nil?
@@ -340,7 +340,7 @@ class BogoBot < IRC
     if event_type.is_a?(Array)
       events = event_type.collect { |event| event.to_s.downcase() }
     else
-      events = event_type.to_s.downcase.to_a()
+      events = [event_type.to_s.downcase]
     end
 
     if @plugins_loaded.has_key?(plugin_name)
@@ -586,7 +586,7 @@ class BogoBot < IRC
       # be simplified.
       case cmd
       when "login"
-        pw = MD5.new(text).to_s()
+        pw = Digest::MD5.hexdigest(text)
         if @owners.has_key?(event.from)
           if @owners[event.from].password == pw
             @owners[event.from].login()
@@ -639,7 +639,12 @@ class BogoBot < IRC
     if msg.empty?
       msg = "A BogoBot Named #{@nick} is Quitting. Version: #{BOT_VERSION}"
     end
-
+    
+    if @log
+      @log.info("Bogobot Quitting.")
+    else
+      puts "Bogobot Quitting"
+    end
     send_quit(msg)
   end
 
@@ -766,7 +771,7 @@ class BogoBot < IRC
       @plugins_loaded.delete(plugin_name)
       return true
     rescue Exception => err
-      self.error("Error unloading #{plugin_file}!", err)
+      self.error("Error unloading #{plugin_name}!", err)
     end
   end
 
@@ -815,7 +820,9 @@ class BogoBot < IRC
 
       conf_name = p.config_file()
       plugin_conf = File.join(CONFIG_DIR, conf_name + ".conf")
-      conf = Config::Config.new(plugin_conf, File.exists?(plugin_conf))
+      conf = SimpleConfig::SimpleConfig.new(plugin_conf, 
+        File.exists?(plugin_conf)
+      )
 
       p.start(self, conf)
       return true
