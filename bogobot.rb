@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby1.9
+#!/usr/bin/env ruby
 
 require "rubygems"
 
@@ -113,7 +113,7 @@ class BogoBot < IRC
         self.error("#{nick} password is not md5. Not added.")
         next
       end
-      @owners[nick] = Owner.new(nick, pw)
+      @owners[nick.to_sym()] = Owner.new(nick, pw)
     end
 
     # If we have no owners, this is not good, so we panic
@@ -580,6 +580,7 @@ class BogoBot < IRC
     text = parse_message(event).strip()
 
     if text.any?
+      nick = event.from.to_sym()
       cmd, text = text.split(/\s+/, 2)
 
       # XXX Um, any other owner commands? Otherwise, this can
@@ -587,9 +588,9 @@ class BogoBot < IRC
       case cmd
       when "login"
         pw = Digest::MD5.hexdigest(text)
-        if @owners.has_key?(event.from)
-          if @owners[event.from].password == pw
-            @owners[event.from].login()
+        if @owners.has_key?(nick)
+          if @owners[nick].password == pw
+            @owners[nick].login()
             msg = "#{event.from} logged in as owner."
           else
             msg = "Password does not match."
@@ -609,12 +610,10 @@ class BogoBot < IRC
   end
 
   def do_owner_list(event)
-    owners = @owners.keys.sort.inject([]) do |own, owner|
-      @owners[owner].is_logged_in? ? own.push(@owners[owner].nick) : own
-    end
+    owners = @owners.sort.collect {|owner| owner[0].to_s()}
 
     if owners.any?
-      msg = owners.join(", ")
+      msg = "Owner: " + owners.join(", ")
     else
       msg = "None logged in."
     end
@@ -682,19 +681,21 @@ class BogoBot < IRC
   end
 
   # If the given nick is a owner and is logged in, returns true.
-  def is_owner?(nick=nil)
+  def is_owner?(nick="")
+    nick = nick.to_sym() unless nick.is_a?(Symbol)
     return true if @owners.key?(nick) and @owners[nick].is_logged_in?
+    return false
   end
 
-  # XXX There is a bug here for nicks that contains {}'s and []'s.
-  # It will change -to- nicks containing those, but won't change
-  # back later.
+  # Handles changing nicks for the owners.
+  # XXX Should make sure User objects in Channels are changed
+  # as well.
   def on_nick(event)
-    old_nick = event.old_nick
-    new_nick = event.new_nick
+    old_nick = event.old_nick.to_sym()
+    new_nick = event.new_nick.to_sym()
     if @owners.has_key?(old_nick)
       @owners[new_nick] = @owners[old_nick].dup()
-      @owners[new_nick].nick = new_nick
+      @owners[new_nick].nick = new_nick.to_s()
       @owners.delete(old_nick)
     end
     return true
@@ -939,7 +940,7 @@ class Owner
   end
 
   def is_logged_in?
-    return true if @is_logged
+    return @is_logged
   end
 end
 
