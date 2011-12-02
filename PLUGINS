@@ -5,19 +5,31 @@ The Basics
 ----------
 
 A BogoBot plugin is simple a ruby file located in BogoBot's plugin
-directory (default: plugins/) that contains a subclass of 
-Plugin::PluginBase.  The plugin's initialize() method handles any 
-_pre-running_ setup and configuration, while the start() method is where
-the plugin actually starts to work, reads any passed-in config options, etc.
+directory (default: plugins/) that uses the Plugin class' language
+to define the plugin.
 
-It is also within the initialize() method that you give the name, author
-and version of the plugin, using methods of the same name:
+This would be a minimum plugin:
 
-  def initialize
-    name "My Plugin!"
-    author "Syntruth"
+  Plugin.define :myplugin do
+    name    "My Plugin"
+    author  "syntruth"
     version "1.0"
+
+    command :echo do |event|
+      msg = event.message
+      event.reply(msg)
+    end
+
+    help_for :echo do
+      "Echos whatever is given after {cmd}echo and not much else."
+    end
   end
+
+...that would define the !echo command, which takes whatever text is 
+passed to it and echos it back to the channel, or if the user issued
+the !echo command in private, back in a private message to that user.
+You don't have to worry about checking for public vs private messages,
+the event and bot handles that for you.
 
 A basic, bare-bones (but working) plugin is provided in the plugins
 directory called plugin_template.rb -- you can use this file as the
