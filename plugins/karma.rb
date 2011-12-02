@@ -1,87 +1,125 @@
-class Karma < Plugin::PluginBase
+require "yaml"
 
-  KARMA_RE = /^([a-z0-9 ]+?[a-z0-9])(\+\+|--)\s*?(\d|10)?$/i
+Plugin.define :karma do
 
-  def initialize
-    name "Karma"
-    author "Syn"
-    version "0.6"
+  name    "Karma"
+  author  "Syn"
+  version "1.0"
 
-    @file = nil
+  # The karma regex matches alphanum, spaces, and the period chars.
+  assign :karma_re, /^([a-z0-9. ]+?[a-z0-9.])(\+\+|--)\s*?(\d|10)?$/i
+
+  on :start do
+    assign :file,       config.get("file", "karma.dat")
+    assign :points_cap, config.get("points_cap", 10)
+    assign :regen,      config.get("regen", 900)
+    assign :verbose,    config.get("verbose", false)
+    assign :nicks,      {}
+
+    assign :nick_file,  config.get("nick_file", "karma_nicks.dat")
+
+    ensure_file nick_file
+    
+    storage_file(nick_file) do |fp|
+      data = YAML.load(fp.read())
+      nicks.update(data)
+    end
   end
 
-  def start(bot, config)
-    @file = bot.get_storage_path(config.get("file", "karma.dat"))
-    @verbose = config.get("verbose", false)
-
-    # Ensure our storage file exists.
-    if not File.exists?(@file)
-      self.save_file({})
+  on :stop do
+    data = nicks
+    storage_file(nick_file, "w") do |fp|
+      fp.write(YAML.dump(data))
     end
-
-    bot.add_handler(self, 'pubmsg') do |event|
-      self.do_pubmsg(bot, event)
-    end
-
-    bot.add_handler(self, 'privmsg') do |event|
-      self.do_privmsg(bot, event)
-    end
-
-    karma_help = "{cmd}karma [:command|subject] -- " + 
-      "Commands are :top, :bottom, :average, and :stats. " +
-      "Top and Bottom will give the top and bottom 3 karmas." +
-      "If given a subject, will report the karma for that subject.\n" + 
-      "You can give a subject karma by simply giving the subject followed " +
-      "immediately by either ++ or -- for good or bad karma. " +
-      "Karma can only be given in a public channel. " + 
-      "For example: coffee++ or Syn-- or summer glau++"
-
-    bot.add_command(self, "karma", false, false, karma_help) do |bot, event|
-      self.do_karma(bot, event)
-    end
-
   end
 
-  def do_pubmsg(bot, event)
-    found = self.parse_karma(event.message())
+  handle :pubmsg do |event|
+    msg = do_pubmsg(event)
+    event.reply(msg) unless msg.nil?
+  end
+
+  handle :privmsg do |event|
+    msg = do_privmsg(event)
+    event.reply(msg) unless msg.nil?
+  end
+
+  handle :nick do |event|
+    oldnick        = event.old_nick
+    newnick        = event.new_nick
+    nicks[newnick] = nicks.delete(oldnick) if nicks.has_key?(oldnick)
+  end
+
+  command :karma do |event|
+    msg = do_karma(event)
+    event.reply(msg)
+  end
+
+  help_for :karma do 
+    "{cmd}karma [:command|subject] -- " + 
+    "Commands are :points, :top, :bottom, :average, and :stats. " +
+    "Points will tell you how many karma points you have to spend." +
+    "Top and Bottom will give the top and bottom 3 karmas." +
+    "If given a subject, will report the karma for that subject.\n" + 
+    "You can give a subject karma by simply giving the subject followed " +
+    "immediately by either ++ or -- for good or bad karma. " +
+    "Karma can only be given in a public channel. " + 
+    "For example: coffee++ or Syn-- or summer glau++"
+  end
+
+  helper :do_pubmsg do |event|
+    msg   = nil
+    found = parse_karma(event.message)
+    nick  = event.from
+
+    update_karma_points(nick)
+
+    data   = nicks[nick]
+    points = data[:points]
 
     if found
+      subject = found.first
+      karma   = found.last
+      padjust = points - karma.abs
 
-      bot.debug("Karma -- I found: #{found.join(" : ")}")
-
-      subject = found.first()
-      karma = found.last()
-
-      if subject == event.from.downcase()
-        msg = "Change must come from within, but you cannot change your karma."
+      if padjust < 0
+        msg = "Sorry, #{nick}, but you do not have enough karma " + 
+              "points to use. Current karma points: #{points}"
+      elsif subject == event.from.downcase
+        msg = "Change must come from within, but you cannot change your own karma."
       else
-        self.save_karma(subject, karma)
-        karmas = self.get_karmas()
-        msg = "The karma for #{subject} is: #{karmas[subject]}."
+        str = "The karma for %s is: %s\n%s"
+        save_karma(subject, karma)
+
+        data[:points]    = padjust
+        data[:last_used] = Time.now
+
+        nicks[nick] = data
+        karmas      = get_karmas()
+        msg         = str % [subject, karma, points_left(nick)]
       end
-
-      bot.reply(event, msg) if @verbose
-
     end
 
-    return true
+    verbose ? msg : nil
   end
 
-  def do_privmsg(bot, event)
-    if self.parse_karma(event.message())
-      bot.reply(event, "Karma can only be given in a public channel.")
+  helper :do_privmsg do |event|
+    msg = nil
+
+    if parse_karma(event.message())
+      msg = "Karma can only be given in a public channel."
     end
-    return true
+
+    msg
   end
 
-  def do_karma(bot, event)
-    subject = bot.parse_message(event).squeeze(" ").strip.downcase()
+  helper :do_karma do |event|
+    subject = event.message.squeeze(" ").strip.downcase()
 
     if subject.match(/^:/)
       cmd = subject.sub(/^:/, "").to_sym()
-      msg = karma_stats(cmd)
-    elsif subject.any?
-      karmas = self.get_karmas()
+      msg = karma_command(cmd, event)
+    elsif not subject.empty?
+      karmas = get_karmas()
       if karmas.has_key?(subject)
         msg = "The karma for #{subject} is: #{karmas[subject]}."
       else
@@ -89,40 +127,40 @@ class Karma < Plugin::PluginBase
       end
     else
       msg = "Looking for nothing is zen, but wasteful. " + 
-        "Perhaps a subject, please?"
+            "Perhaps a subject, please?"
     end
 
-    bot.reply(event, msg)
+    msg
   end
 
-  def parse_karma(line="")
-    match = KARMA_RE.match(line)
+  helper :parse_karma do |line|
+    match = karma_re.match(line)
+
     if match
       parts = match.captures()
 
       subject = parts[0].squeeze(" ").strip.downcase()
-      karma = parts[2].to_i.abs()
-      karma = 1 if karma.zero?
-      karma = -(karma) if parts[1] == '--'
+      karma   = parts[2].to_i.abs()
+      karma   = 1 if karma.zero?
+      karma   = -(karma) if parts[1] == '--'
 
-      return [subject, karma]
+      [subject, karma]
+    else
+      nil
     end
-    return nil
   end
 
-  def get_karmas
+  helper :get_karmas do
     karmas = {}
 
-    return karmas if @file.nil?
-
-    File.open(@file) do |fp|
+    storage_file(file) do |fp|
       fp.each do |line|
         parts = line.split(/:/).collect {|p| p.strip}
 
         next if parts.length != 2
 
         subject = parts.first()
-        karma = parts.last.to_i()
+        karma   = parts.last.to_i()
 
         karmas[subject] = karma
       end
@@ -131,10 +169,8 @@ class Karma < Plugin::PluginBase
     return karmas
   end
 
-  def save_file(karmas)
-    return false if @file.nil?
-    
-    File.open(@file, "w") do |fp|
+  helper :save_file do |karmas|    
+    storage_file(file, "w") do |fp|
       karmas.sort.each do |key, value|
         fp.write("%s: %s\n" % [key, value])
       end
@@ -143,24 +179,33 @@ class Karma < Plugin::PluginBase
     return true
   end
 
-  def save_karma(subject, karma=1)
+  helper :save_karma do |subject, karma|
+    karma = 1 unless karma.is_a?(Fixnum)
+    karma = 1 if karma.zero?
+
     karmas = self.get_karmas()
+
     karmas[subject] = 0 if not karmas.has_key?(subject)
     karmas[subject] += karma
-    self.save_file(karmas)
+    
+    save_file(karmas)
   end
 
-  def karma_stats(cmd=:top)
-    karmas = self.get_karmas()
+  helper :karma_command do |cmd, event|
+    cmd = :top unless cmd.is_a?(Symbol)
+
+    karmas = get_karmas()
     msg = ""
 
-    # Converty to an array and sort, highest to
+    # Convert to an array and sort, highest to
     # lowest.
-    karma_array = karmas.to_a.sort do |k1, k2|
-      k2.last <=> k1.last
-    end
+    karma_array = karmas.to_a.sort {|k1, k2| k2.last <=> k1.last}
 
     msg = case cmd
+    when :points
+      nick = event.from
+      update_karma_points(nick)
+      points_left(nick)
     when :top
       top = karma_array[0..2].collect do |k| 
         "%s: %s" % [k.first, k.last]
@@ -177,11 +222,37 @@ class Karma < Plugin::PluginBase
       "The Average Karma is: %s" % avg
     when :stats
       "There are #{karma_array.length()} Karma entries."
+    when :agg
+      agg = karma_array.inject(0) {|t, k| t += k.last}
+      "The Aggregate Karma is: %s" % agg
+    else
+      "I don't know how to handle :#{cmd}"
     end
 
     return msg
   end
 
-end
+  helper :update_karma_points do |nick|
+    c = points_cap
 
-register_plugin(Karma)
+    if nicks.has_key?(nick)
+      data = nicks[nick]
+      p    = data[:points] + ((Time.now - data[:last_used]) / regen).to_i
+
+      data[:points] = (p > c) ? c : p
+    else
+      data = {:points => c, :last_used => Time.now}
+    end
+
+    nicks[nick] = data
+
+    return data
+  end
+
+  helper :points_left do |nick|
+    points = nicks[nick][:points]
+
+    return "You have %s karma points left, %s." % [points, nick]
+  end
+
+end

@@ -60,7 +60,7 @@ class IRCEvent
 
     @channel = @message if @event_type == 'join'
 
-    # This is to differtiate public messages.  We'll change the
+    # This is to differentiate public messages.  We'll change the
     # event_type. Further, if the message is a ctcp message, we
     # dequote it and set the event_type to the ctcp tag.
     # For example, this would be an ctcp action payload:
@@ -71,12 +71,15 @@ class IRCEvent
     #
     #  ['ACTION', 'some action here...']
     #
-    # This, the event_type would be 'ctcp_action' and message will
+    # Thus, the event_type would be 'action' and message will
     # be set to the ctcp types data. UNLESS the message is untagged
     # then it's just set as a pubmsg.
     if @event_type == 'privmsg' and "#&+!".index(@channel[0].chr)
+      @event_type = 'pubmsg'
+
       if IRCCTCP.is_ctcp?(@message)
         ctcp_message = IRCCTCP.dequote(@message)
+
         case ctcp_message
         when String
           @message = ctcp_message
@@ -87,8 +90,6 @@ class IRCEvent
           @event_type = ctcp_event.first.downcase()
           @message = ctcp_event.last()
         end
-      else
-        @event_type = 'pubmsg'
       end
     end
 

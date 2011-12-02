@@ -6,6 +6,9 @@ require "rubygems"
 $LOAD_PATH.insert(0, "./lib")
 $LOAD_PATH.insert(0, "./lib/irc")
 
+# Local libs
+require 'lib/init'
+
 # Ruby libs
 require "daemons"
 require "English"
@@ -14,11 +17,7 @@ require "logger"
 require "pathname"
 require "digest/md5"
 
-# Local libs
-require 'lib/init'
-
-BOT_VERSION = "2.0.1"
-
+BOT_VERSION = "2.1.0"
 BOT_PATH = Dir.pwd()
 
 # Set our local paths for bot/plugin/storage files.
@@ -27,6 +26,11 @@ LOG_DIR    = File.join(BOT_PATH, "logs")
 PLUGIN_DIR = File.join(BOT_PATH, "plugins")
 EXTEND_DIR = File.join(BOT_PATH, "extensions")
 STORE_DIR  = File.join(BOT_PATH, "store")
+
+DEFAULT_COMMAND_OPTIONS = {
+  :owner_only => false,
+  :is_private => false
+}
 
 # Usage text.
 USAGE = <<EOF
@@ -80,6 +84,9 @@ class BogoBot < IRC
       raise
     end
 
+    # Initialize the Plugin system
+    Plugin.init(self)
+
     # Holds the bot command map.
     @commands = {}
 
@@ -91,8 +98,14 @@ class BogoBot < IRC
     # Defaults to an empty list.
     @plugins = @config.get("plugin", [])
 
-    # Holds information on the loaded plugins.
+    # Holds the loaded plugins.
     @plugins_loaded = {}
+
+    # We have to make sure to observe the :plugin_defined
+    # event, so we can know when to start 'em.
+    observe_event(:plugin_defined) do |event, plugin|
+      start_plugin(plugin)
+    end
 
     # Get our owners. There has to be at least ONE owner
     # in the configuration file, or else the bot will exit.
@@ -101,19 +114,14 @@ class BogoBot < IRC
     # ...where nick is the nick the owner will have and the
     # password is a md5'd password. This is weak security, I
     # know, but will address in the future.
-    @owners = {}
-    all_owners = @config.get("owner", [])
-
-    # Split each owners entry into a nick and password, and 
-    # if the password is not 32-characters long, do not 
-    # include that owner.
-    all_owners.each do |owner|
+    @owners = @config.get("owner", []).inject({}) do |hash, owner|
       nick, pw = owner.split(/\:/, 2)
-      if not pw.match(/^[A-Fa-f0-9]{32}$/)
+      if pw.match(/^[A-Fa-f0-9]{32}$/)
+        hash[nick.to_sym()] = Owner.new(nick, pw)
+      else
         self.error("#{nick} password is not md5. Not added.")
-        next
       end
-      @owners[nick.to_sym()] = Owner.new(nick, pw)
+      hash
     end
 
     # If we have no owners, this is not good, so we panic
@@ -125,9 +133,9 @@ class BogoBot < IRC
     end
 
     # Set our required parameters to get connected...
-    @nick = @config.get("nick", "BogoBot")
-    @server = @config.get("server")
-    @port = @config.get("port", "6667")
+    @nick     = @config.get("nick", "BogoBot")
+    @server   = @config.get("server", "localhost")
+    @port     = @config.get("port", "6667")
     @realname = @nick
 
     # ...and then call our superclass constructor.
@@ -160,83 +168,98 @@ class BogoBot < IRC
       end
     end
 
+    # And finally, our generic IRC event handler; this dispatcher
+    # will emit events as they come in, if the event has handlers.
+    # Since these will most likely be for Plugins, the event is
+    # wrapped in a PluginEvent wrapper.
+    IRCEvent.add_handler('all') do |event|
+      event_type = event.event_type
+
+      if has_event?(event_type)
+        event = PluginEvent.new(self, event, false)
+        emit_event(event_type, event)
+      end
+    end
+
     ######################
     # Built-in Commands. #
     ######################
 
     # Owner Only Commands
-    add_command(self, "quit", true, false,
-      "Makes the bot quit.") do |bot, event|
+    cmd = add_command(self, "quit", :owner_only => true) do |event|
       do_quit(event)
     end
+    cmd.help = "Makes the bot quit."
 
-    add_command(self, "join", true, false,
-      "{cmd}join <channel> -- Makes the bot join a channel.") do |bot, event|
+    cmd = add_command(self, "join", :owner_only => true) do |event|
       do_join(event)
     end
+    cmd.help = "{cmd}join <channel> -- Makes the bot join a channel."
 
-    add_command(self, "part", true, false,
-      "{cmd}part <channel> -- Makes the bot leave a channel.") do |bot, event|
+    cmd = add_command(self, "part", :owner_only => true) do |event|
       do_part(event)
     end
+    cmd.help = "{cmd}part <channel> -- Makes the bot leave a channel."
 
-    add_command(self, "alias", true, false,
-      "{cmd}alias <command> <old> [<new>] -- " + 
-      "Adds or removes a command alias. The command can be " + 
-      "either 'add' or 'remove'. Do not put the command token on " + 
-      "the old or new command strings.") do |bot, event|
+    cmd = add_command(self, "alias", :owner_only => true) do |event|
       do_command_alias(event)
     end
+    cmd.help = "{cmd}alias <command> <old> [<new>] -- " + 
+      "Adds or removes a command alias. The command can be " + 
+      "either 'add' or 'remove'. Do not put the command token on " + 
+      "the old or new command strings."
 
-    add_command(self, "load", true, false,
-      "{cmd}load <plugin> -- Loads a plugin.") do |bot, event|
+    cmd = add_command(self, "load", :owner_only => true) do |event|
       do_load_plugin(event)
     end
+    cmd.help = "{cmd}load <plugin> -- Loads a plugin."
 
-    add_command(self, "unload", true, false,
-      "{cmd}unload <plugin> -- Unloads a plugin.") do |bot, event|
+    cmd = add_command(self, "unload", :owner_only => true) do |event|
       do_unload_plugin(event)
     end
-
-    add_command(self, "reload", true, false,
-      "{cmd}reload <plugin> -- Reloads a plugin.") do |bot, event|
+    cmd.help = "{cmd}unload <plugin> -- Unloads a plugin."
+    
+    cmd = add_command(self, "reload", :owner_only => true) do |event|
       do_reload_plugin(event)
     end
+    cmd.help = "{cmd}reload <plugin> -- Reloads a plugin."
 
-    add_command(self, "plugins", true, false,
-      "{cmd}list [brief]-- Lists loaded plugins. " + 
-      "If 'brief' is true, a brief list is given.") do |bot, event|
+    cmd = add_command(self, "plugins", :owner_only => true) do |event|
       do_list_plugins(event)
     end
+    cmd.help = "{cmd}list [brief]-- Lists loaded plugins. " + 
+      "If 'brief' is true, a brief list is given."
 
     # Public Commands
-    add_command(self, "list", false, false, "Lists commands.") do |bot, event|
+    cmd = add_command(self, "list") do |event|
       do_command_list(event)
     end
+    cmd.help = "Lists commands."
 
-    add_command(self, "owner", false, true,
-      "Owners commands, private message only.") do |bot, event|
+    cmd = add_command(self, "owner", :is_private => true) do |event|
       do_owner_cmd(event)
     end
-
-    add_command(self, "owners", false, false, "Lists owners.") do |bot, event|
+    cmd.help = "Owners commands, private message only."
+    
+    cmd = add_command(self, "owners") do |event|
       do_owner_list(event)
     end
+    cmd.help = "Lists owners."
 
-    add_command(self, "help", false, false,
-      "{cmd}help <command> -- Shows help for command") do |bot, event|
+    cmd = add_command(self, "help") do |event|
       do_help(event)
     end
+    cmd.help = "{cmd}help <command> -- Shows help for command"
     
-    add_command(self, "version", false, false,
-      "{cmd}version -- Shows the bot's version.") do |bot, event|
+    cmd = add_command(self, "version") do |event|
       do_version(event)
     end
+    cmd.help = "{cmd}version -- Shows the bot's version."
 
-    # Okay, we're configured and ready to go. Add ourselves 
-    # to the kernel so that the register_* methods will work.
-    set_bot(self)
+  # Set the bot for error/debug globals.
+  set_bot(self)
 
+  # ...and done!
   end
 
   # This loads all plugins given in the configuration file and then 
@@ -244,13 +267,12 @@ class BogoBot < IRC
   # do the actual connection.
   def connect
     # Load our plugins.
-    @plugins.each do |p|
-      load_plugin(p)
-    end
-
+    @plugins.each {|p| load_plugin(p)}
+    
     log_file = File.join(LOG_DIR, @config.get("log", "bogobot.log"))
     @log = Logger.new(log_file)
     @log.level = @do_debug ? Logger::DEBUG : Logger::WARN
+
     super()
   end
 
@@ -258,7 +280,8 @@ class BogoBot < IRC
   # else outputs to $strerr.
   def error(msg, error_object=nil)
     if error_object and error_object.is_a?(Exception)
-      msg += "\n#{error_object}\n#{error_object.backtrace.join('\n')}"
+      msg += "\n#{error_object}\n--------\n"
+      msg += "  #{error_object.backtrace.join("\n  ")}"
     end
 
     if @log.nil?
@@ -284,84 +307,32 @@ class BogoBot < IRC
   # track of plugin's commands. The bot passes itself, but has
   # no affect.
   # Parameters:
-  # :cmd_str:    This is the requested string for the command,
-  #              which has to be at least 2 characters long. Do not
-  #              prepent a command sigil on the string. There is 
-  #              _no_ check on if the command string is already
-  #              set for another command. (XXX Fix this, actually.)
-  # :owner_only: A boolean value; if true, then only bot owners can
-  #              call this command.
-  # :help:       A string that will be used when the help command is
-  #              called for this command.
+  # :cmd_str:    This is the requested string for the command.
+  #              Do not prepend a command sigil on the string.
+  #              There is _no_ check on if the command string is 
+  #              already set for another command. 
+  #                (XXX Fix this, actually.)
+  # :options:    A hash of options, typically :owner_only and
+  #              :is_private boolean values.
+  #              If :owner_only is set to true, then only the bot's
+  #              owner can call this command.
+  #              If :is_private is set to true, then the command can
+  #              only be issued from a private message to the bot.
+  #
   # You have to pass a block of code for your command to this method.
   # The block will be passed |bot, event| as arguements. The bot is,
   # of course, the instance of the bot, while event is the irc event
   # that triggered the command.
-  def add_command(plugin, cmd_str, owner_only, is_priv, help, &block)
+  def add_command(plugin, cmd_str, options={}, &block)
+    cmd_str = cmd_str.to_sym() if cmd_str.is_a?(String)
     
-    # Handle plugin commands so they can be removed later.
-    if plugin != self
+    options ||= {}
+    options = DEFAULT_COMMAND_OPTIONS.dup.update(options)
 
-      plugin_name = plugin.class.to_s.downcase()
+    cmd_obj = UserCommand.new(self, options, block)
+    @commands[cmd_str] = cmd_obj
 
-      if @plugins_loaded.has_key?(plugin_name)
-        @plugins_loaded[plugin_name][:commands].push(cmd_str)
-      else
-        self.error("add_command given an unknown plugin: #{plugin_name}")
-        return
-      end
-    end
-
-    if cmd_str.length >= 2
-      @commands[cmd_str] = UserCommand.new(owner_only, help, is_priv, block)
-    else
-      self.error("Command #{cmd_str} is less than 2 characters long!")
-    end
-  end
-
-  # This method is used to add an IRC event handler. Plugins _must_
-  # pass themselves as the first argument; this is used to keep
-  # track of the plugin's handlers.
-  #
-  # Parameters:
-  # :event_type:  This is either a string or symbol for the irc event
-  #               that is being requrested to be handled, such as 
-  #               :privmsg or :nick. See lib/irc/eventmap.yml for all
-  #               known events. This argument may also be an array of
-  #               irc events that will be handled by the same code.
-  #               :privmsg events that are sent to a channel are set to
-  #               :pubmsg for event_type, and CTCP events are set to
-  #               their CTCP type, such as :action.
-  # You must pass a block to this method, which will be passed 
-  # |bot, event| as arguments. The event will be the one being handled.
-  def add_handler(plugin, event_type, &handler)
-    plugin_name = plugin.class.to_s.downcase()
-
-    if event_type.is_a?(Array)
-      events = event_type.collect { |event| event.to_s.downcase() }
-    else
-      events = [event_type.to_s.downcase]
-    end
-
-    if @plugins_loaded.has_key?(plugin_name)
-      events.each do |event|
-
-        if not @plugins_loaded[plugin_name][:handlers].has_key?(event)
-          @plugins_loaded[plugin_name][:handlers][event] = []
-        end
-
-        hid = IRCEvent.add_handler(event) do |e|
-          handler.call(e)
-        end
-
-        @plugins_loaded[plugin_name][:handlers][event].push(hid)
-
-        return hid
-      end
-    else
-      bot.error("add_handler given an unknown plugin: #{plugin_name}")
-      return nil
-    end
+    return cmd_obj
   end
 
   # Removes a command for a given command string. Do not put the
@@ -370,47 +341,10 @@ class BogoBot < IRC
     @commands.delete(cmd_str) if @commands.has_key?(cmd_str)
   end
 
-  # Removes all of a given plugin's commands. Used for unloading
-  # a plugin.
-  # Parameters:
-  # :plugin:  The plugin instance who's commands are to be removed.
-  def remove_plugin_commands(plugin)
-    plugin_name = plugin.class.to_s.downcase()
-    if @plugins_loaded.has_key?(plugin_name)
-      @plugins_loaded[plugin_name][:commands].each do |cmd_str|
-        self.remove_command(cmd_str)
-      end
-      @plugins_loaded[plugin_name][:commands].clear()
-    end
-  end
-
-  # Remove a handler for a given event.
-  # Parameters:
-  # :event_type: The string/symbol irc event.
-  # :handler:    This is the block object that was passed to 
-  #              add_handler() -- so if you anticipate removing a
-  #              handler, make sure you make a reference to it, since
-  #              this will use the id's to compare.
-  #              XXX: Um, how is a plugin to do this? Must revisit this.
-  def remove_handler(event_type, handler_id)
-    IRCEvent.remove_handler(event_type, handler_id)
-  end
-
-  # Removes all of a plugin's event handlers for a given plugin.
-  # User for unloading a plugin.
-  # Parameters:
-  # :plugin: The plugin's instance.
-  def remove_plugin_handlers(plugin)
-    plugin_name = plugin.class.to_s.downcase()
-
-    if @plugins_loaded.has_key?(plugin_name)
-      @plugins_loaded[plugin_name][:handlers].each do |event_type, handlers|
-        handlers.each do |handler_id|
-          self.remove_handler(event_type, handler_id)
-        end
-      end
-      @plugins_loaded[plugin_name][:handlers].clear()
-    end
+  # Returns the list of valid !commands.
+  # The returned commands do not have their command sigil on them.
+  def valid_commands
+    return @commands.keys.sort()
   end
 
   # Joins all channels specified in the bot's config file.
@@ -430,23 +364,23 @@ class BogoBot < IRC
   def do_command_alias(event)
     cmd = nil
     cmdstr = @command_tokens.first()
-    parts = parse_message(event).split(/\s/)
+    parts = event.message.split(/\s/)
 
     case parts.length()
     when 1
       cmd = parts.first()
     when 2
       cmd = parts.first()
-      args = parts.last()
+      args = parts.last.to_sym()
     when 3
       cmd = parts.first()
-      args = parts[1..-1]
+      args = parts[1..-1].collect {|p| p.to_sym()}
     end
 
     case cmd
     when "add"
-      old = args.first()
-      new = args.last()
+      old = args.first
+      new = args.last
       if @commands.has_key?(old)
         @commands[new] = @commands[old].dup()
         @commands[new].alias_for(old)
@@ -456,7 +390,7 @@ class BogoBot < IRC
       end
 
     when "remove"
-      old = args.first()
+      old = args
       if @commands.has_key?(old)
         if @commands[old].is_alias?
           @commands.delete(old)
@@ -474,22 +408,22 @@ class BogoBot < IRC
   end
 
   def do_command_list(event)
-    cmd_list = @commands.keys.sort.collect do |key|
+    cmd_list = @commands.keys.sort{|k1, k2| k1.to_s <=> k2.to_s}.collect do |key|
       if @commands[key].is_alias?
         "#{key} (alias for: #{@commands[key].alias_for()})"
       else
         key
       end
     end
-    reply(event, "Commands:  #{cmd_list.join(", ")}")
+    reply(event, "Commands: #{cmd_list.join(", ")}")
   end
 
   def do_help(event)
-    topic = parse_message(event).strip()
+    topic = event.message.downcase.strip()
 
-    topic = "help" if topic.empty?
+    topic = topic.empty? ? :help : topic.to_sym()
 
-    if @commands.key?(topic)
+    if @commands.has_key?(topic)
       msg = @commands[topic].help(@nick, @command_tokens.first())
 
       if @commands[topic].is_alias?
@@ -507,7 +441,7 @@ class BogoBot < IRC
   end
 
   def do_join(event)
-    channel = parse_message(event).strip()
+    channel = event.message.strip()
 
     return if channel.empty?
 
@@ -518,20 +452,21 @@ class BogoBot < IRC
   end
 
   def do_list_plugins(event)
-    brief = parse_message(event).strip.any?
+    brief = event.message.strip.empty? ? false : true
 
     joinstr = brief ? ", " : "\n"
 
     msg = @plugins_loaded.keys.sort.collect { |plugin|
-      @plugins_loaded[plugin][:object].to_s(brief)
+      @plugins_loaded[plugin].to_s(brief)
     }.join(joinstr)
 
     reply(event, msg)
   end
 
   def do_load_plugin(event)
-    plugin = parse_message(event).strip()
-    if plugin.any?
+    plugin = event.message.strip()
+
+    if not plugin.empty?
       if load_plugin(plugin)
         msg = "Plugin #{plugin} loaded."
       else
@@ -544,8 +479,8 @@ class BogoBot < IRC
   end
 
   def do_unload_plugin(event)
-    plugin = parse_message(event).strip()
-    if plugin.any?
+    plugin = event.message.strip()
+    if not plugin.empty?
       if unload_plugin(plugin)
         msg = "Plugin #{plugin} unloaded."
       else
@@ -558,8 +493,8 @@ class BogoBot < IRC
   end
 
   def do_reload_plugin(event)
-    plugin = parse_message(event).strip()
-    if plugin.any?
+    plugin = event.message.strip()
+    if not plugin.empty?
       if reload_plugin(plugin)
         msg = "Plugin #{plugin} reloaded."
       else
@@ -577,9 +512,9 @@ class BogoBot < IRC
       return
     end
 
-    text = parse_message(event).strip()
+    text = event.message
 
-    if text.any?
+    if not text.empty?
       nick = event.from.to_sym()
       cmd, text = text.split(/\s+/, 2)
 
@@ -610,7 +545,9 @@ class BogoBot < IRC
   end
 
   def do_owner_list(event)
-    owners = @owners.sort.collect {|owner| owner[0].to_s()}
+    owners = @owners.sort{|o1, o2| o1.to_s <=> o2.to_s}.collect do |owner|
+      owner[0].to_s()
+    end
 
     if owners.any?
       msg = "Owner: " + owners.join(", ")
@@ -622,20 +559,20 @@ class BogoBot < IRC
   end
 
   def do_part(event)
-    channel = parse_message(event).strip()
+    channel = event.message
     channel = "#" + channel if not IRCChannel.is_channel?(channel)
     part(channel)
   end
 
   def do_quit(event)
-    msg = parse_message(event).strip()
+    msg = event.message.strip()
 
     # We need to unload all of our plugins, so that their 
     # stop() methods can be called just in case they need 
     # it to happen to save files, etc.
     self.unload_all_plugins()
 
-    if msg.empty?
+    if msg.empty? or msg.nil?
       msg = "A BogoBot Named #{@nick} is Quitting. Version: #{BOT_VERSION}"
     end
     
@@ -644,6 +581,7 @@ class BogoBot < IRC
     else
       puts "Bogobot Quitting"
     end
+
     send_quit(msg)
   end
 
@@ -713,17 +651,25 @@ class BogoBot < IRC
 
   # Handles a command for a given command string and event.
   def handle_command(cmd_str, event)
-    cmd_str.downcase!
-    return false if not @commands.has_key?(cmd_str)
+    cmd_str = cmd_str.downcase.to_sym() if cmd_str.is_a?(String)
+
+    if not @commands.has_key?(cmd_str)
+      debug "handle_command(): command string #{cmd_str} not found."
+      return false 
+    end
+
     begin
       # If the event is a pubmsg and the command is a private-only
       # say so and return.
       if event.event_type == 'pubmsg' and @commands[cmd_str].private?
         self.reply(event, "#{cmd_str} is a private-message only command!")
       else
-        @commands[cmd_str].call(self, event) if @commands.has_key?(cmd_str)
+        # Wrap it up the event for easy use.
+        event = PluginEvent.new(self, event, true)
+        @commands[cmd_str].call(event)
       end
       return true
+
     rescue Exception => err
       self.error("Error handling #{cmd_str}!", err)
       self.reply(event, "There was an error running the #{cmd_str} command. Check the logs.")
@@ -731,9 +677,9 @@ class BogoBot < IRC
     end
   end
 
-  # This will load a plugin in the plugin directory. The plugin, however
-  # is responsible for calling Kernel.register_plugin() to initiate the
-  # actual plugin class. See start_plugin().
+  # This will load a plugin in the plugin directory.
+  # The plugin is not actually started until its start() method is
+  # called. See start_plugin() for more.
   def load_plugin(plugin_name=nil)
 
     # We refresh the rubygem paths, just in case the plugin needs
@@ -741,14 +687,14 @@ class BogoBot < IRC
     # running.
     Gem.refresh()
 
-    if plugin_name.is_a?(String) and plugin_name.any?
+    if plugin_name.is_a?(String) and not plugin_name.empty?
       plugin_name.downcase!
 
       plugin_file = File.join(PLUGIN_DIR, plugin_name + ".rb")
 
       if File.exists?(plugin_file)
         begin
-          load plugin_file
+          Plugin.load_plugin(plugin_file)
           return true
         rescue Exception => err
           self.error("Error loading #{plugin_file}!", err)
@@ -783,53 +729,35 @@ class BogoBot < IRC
   end
 
   # Unloads and then reloads a plugin.
-  # If the plugin is loaded if it wasn't to begin with.
+  # The plugin is loaded if it wasn't to begin with.
   def reload_plugin(plugin_name=nil)
     return false if plugin_name.nil?
     if @plugins_loaded.has_key?(plugin_name)
       self.unload_plugin(plugin_name)
     end
-    return self.load_plugin(plugin_name)
+    self.load_plugin(plugin_name)
   end
 
-  # This method starts a plugin, after it has called Kernel.register_plugin().
-  # It must be passed the plugin's Class, which has to be a subclass
-  # of Plugin::PluginBase.  This will instatiate the plugin, then will call
-  # the plugin's start() method, passing in the bot and any config file for
-  # the plugin.
   def start_plugin(plugin)
-    if not plugin.is_a?(Class)
-      self.error("start_plugin passed a non-class!")
+    if not plugin.is_a?(Plugin)
+      self.error("#{plugin.class} is not a sub-class of Plugin!")
       return false
     end
 
-    if not plugin.ancestors.include?(Plugin::PluginBase)
-      self.error("#{plugin.to_s} is not a sub-class of PluginBase!")
-      return false
-    end
-
-    plugin_name = plugin.to_s.downcase()
+    plugin_name = plugin.class.to_s.downcase()
 
     begin
-      p = plugin.new()
-
-      @plugins_loaded[plugin_name] = {
-        :object => p,
-        :commands => [],
-        :handlers => {}
-      }
-
-      conf_name = p.config_file()
+      conf_name = plugin.config_file()
       plugin_conf = File.join(CONFIG_DIR, conf_name + ".conf")
+
       conf = SimpleConfig::SimpleConfig.new(plugin_conf, 
         File.exists?(plugin_conf)
       )
 
-      p.start(self, conf)
-      return true
+      plugin.start(conf)
+      @plugins_loaded[plugin_name] = plugin
 
     rescue Exception => err
-      @plugins_loaded.delete(plugin_name)
       self.error("Error starting plugin: #{plugin_name}!", err)
       return false
     end
@@ -841,10 +769,7 @@ class BogoBot < IRC
   # that is handled by unload_plugin(), which calls this method first.
   def stop_plugin(plugin_name)
     if @plugins_loaded.has_key?(plugin_name)
-      plugin = @plugins_loaded[plugin_name][:object]
-      self.remove_plugin_commands(plugin)
-      self.remove_plugin_handlers(plugin)
-      plugin.stop() if plugin.respond_to?(:stop)
+      @plugins_loaded[plugin_name].stop()
     end
   end
 
@@ -914,7 +839,7 @@ class BogoBot < IRC
   # Intended to be used by !command handlers, _not_ event handlers.
   def parse_message(event)
     cmd, message = event.message.to_s.split(/\s/, 2)
-    return message.to_s()
+    return message
   end
 
 end
@@ -949,29 +874,35 @@ end
 # command.
 class UserCommand
   attr_reader :owner_only
-  attr_accessor :private
+  attr_reader :private
 
-  def initialize(owner_only, help, is_priv, block)
-    @owner_only = owner_only
-    @help = help.to_s
-    @private = is_priv
-    @alias_for = ""
-    @block = block
+  def initialize(bot, options, block)
+    options = {} if not options.is_a?(Hash)
+
+    @bot        = bot
+    @owner_only = options[:owner_only]
+    @private    = options[:is_private]
+    @help       = ""
+    @alias_for  = nil
+    @block      = block
   end
 
-  def call(bot, event)
-    if @owner_only and not bot.is_owner?(event.from)
-      msg = "Sorry, #{event.from}, but you are not my owner."
-      bot.reply(event, msg)
+  def call(event)
+    if @owner_only and not @bot.is_owner?(event.from)
+      @bot.reply(event, "Sorry, #{event.from}, but you are not my owner.")
       return
     end
-    @block.call(bot, event)
+    @block.call(event)
+  end
+
+  def help=(help_str)
+    @help = help_str
   end
 
   def help(botname="", token="")
     help = @help.dup()
-    help.gsub!("{bot}", botname) if botname.any?
-    help.gsub!("{cmd}", token) if token.any?
+    help.gsub!("{bot}", botname)
+    help.gsub!("{cmd}", token)
     return help
   end
 
@@ -986,7 +917,8 @@ class UserCommand
   end
 
   def is_alias?
-    return @alias_for.any?
+    return false if @alias_for.nil?
+    return true
   end
 
 end
@@ -997,8 +929,8 @@ end
 opts = GetoptLong.new(
   ["--config", "-c", GetoptLong::REQUIRED_ARGUMENT],
   ["--daemon", "-d", GetoptLong::NO_ARGUMENT],
-  ["--debug", GetoptLong::NO_ARGUMENT],
-  ["--help", "-h", GetoptLong::NO_ARGUMENT]
+  ["--debug",        GetoptLong::NO_ARGUMENT],
+  ["--help",   "-h", GetoptLong::NO_ARGUMENT]
 )
 
 config = "default"

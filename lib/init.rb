@@ -1,9 +1,12 @@
 # Put local libs that need to be loaded here.
 #
-# The following four libs are REQUIRED!
-require "irc/IRC"
-require "kernel"
-require "config"
-require "plugin"
+$LOAD_PATH.insert(0, './irc')
 
-# Load any special libs here.
+# The following four libs are REQUIRED!
+require "string"
+require "kernel"
+require "events"
+require "plugin"
+require "simpleconfig"
+require "irc/IRC"
+

@@ -1,41 +1,39 @@
-class Calc < Plugin::PluginBase
+Plugin.define "calc" do
 
-  ALLOWED = "0123456789+-/*().%<>&|".split(//)
+  # Allows numbers, hex in the form of 0xFF and parens.
+  assign :allowed, "0123456789abcedfx+-/*().%<>&|".split(//)
 
-  def initialize
-    author "Randy"
-    version "1.0b"
-    name "Calc"
-  end
+  name    "Calc"
+  author  "Randy"
+  version "1.0b"
 
-  def start(bot, config)
-    calc_help = "{cmd}calc <string> -- Calulates string. " +
-      "Allowed characters: #{ALLOWED.join("")}"
-    bot.add_command(self, "calc", false, false, calc_help) do |bot, event|
-      self.do_calc(bot, event)
-    end
-  end
-
-  def stop
-    #nop
-  end
-
-  def do_calc(bot, event)
-    msg = bot.parse_message(event).strip.gsub(/\s+/, "")
-
-    parts = msg.split(//)
-    bad = parts - (parts & ALLOWED)
+  helper :do_calc do |event|
+    text = event.message
+    parts = text.downcase.gsub(/\s+/, "").split(//)
+    bad = parts - (parts & allowed)
 
     if bad.any?
       msg = "#{event.from}: There are unallowed characters. " + 
         "Bad characters: #{bad.join("")}"
     else
-      msg = "#{event.from}, the answer is: " + eval(msg).to_s()
+      begin
+        msg = "#{event.from}, the answer is: " + eval(text).to_s()
+      rescue Exception => err
+        msg = "Error in calculation: #{err}"
+      end
     end
 
-    bot.reply(event, msg)
+    msg
+  end
+
+  command :calc do |event|
+    msg = do_calc(event)
+    event.reply(msg)
+  end
+
+  help_for :calc do
+    "{cmd}calc <string> -- Calulates string. " +
+    "Allowed characters: #{allowed.join("")}"
   end
 
 end
-
-register_plugin(Calc)

@@ -3,10 +3,16 @@ require "IRCUser"
 # Represents an IRC Channel
 class IRCChannel
 
-  @@channel_sigils = ["#", "&", "+", "!"]
+  ChannelSigils = ["#", "&", "+", "!"]
+  ChannelSigilRE = /^[#{ChannelSigils.join('')}]/
 
   def IRCChannel.is_channel?(channel="")
-    return true if @@channel_sigils.include?(channel[0].chr)
+    return true if ChannelSigils.include?(channel[0].chr)
+  end
+
+  # Returns the channel with out the channel sigil.
+  def IRCChannel.strip(channel)
+    return channel.gsub(ChannelSigilRE, '')
   end
 
   attr_reader :name

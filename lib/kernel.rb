@@ -12,13 +12,11 @@ module Kernel
 
   def error(message)
     # handle message
-    @@bot.error(message)
+    @@bot ? @@bot.error(message) : $stderr.write(message + "\n")
   end
 
-  # Plugin Register method
-  # Merely a wrapper for the bot's init plugin.
-  def register_plugin(plugin)
-    @@bot.start_plugin(plugin)
+  def debug(message)
+    @@bot ? @@bot.debug(message) : $stdout.write(message + "\n")
   end
 
   # XXX: Implement someday!

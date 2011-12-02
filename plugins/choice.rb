@@ -1,44 +1,41 @@
-class Choice < Plugin::PluginBase
+Plugin.define "choice" do
 
-  def initialize()
-    author "Syn"
-    name "Choice"
-    version "1.0"
+  author "Syn"
+  name "Choice"
+  version "1.0"
 
-    @sayings = []
-    @yes_no = ["Yes", "No"]
-    @words = ["are", "does", "is", "should", "will"]
-  end
+  assign :yes_no,  ["Yes", "No"]
+  assign :words,   ["are", "does", "is", "should", "will"]
 
-  def start(bot, config)
-    @sayings = config.get("saying", @yes_no)
+  words.each do |word|
+    word = word.to_sym()
 
-    choice_help = "{cmd}[#{@words.join("|")}] <subject> <question>? " +
+    command word do |event|
+      msg = do_choice(event)
+      event.reply(msg)
+    end
+
+    help_for word do 
+      "{cmd}[#{words.join("|")}] <subject> <question>? " +
       "-- Ask a question. Multiple choice questions are separated by commas " + 
       "or \" or \".\n" +
       "Example: {cmd}should I eat cake or go jogging? ...or... " + 
       "{cmd}will I get lucky?"
-
-    @words.each do |word|
-      bot.add_command(self, word, false, false, choice_help) do |bot, event|
-        self.do_choice(bot, event)
-      end
     end
-
   end
 
-  def stop
-    # nop
+  on :start do
+    assign :sayings, config.get("saying", yes_no)
   end
 
-  def do_choice(bot, event)
-    text = bot.parse_message(event).strip()
+  helper :do_choice do |event|
+    text = event.message.strip()
 
     if text.any?
       options = self.parse_options(text)
       case options.length
       when 1
-        msg = @sayings[rand(@sayings.length())]
+        msg = sayings[rand(sayings.length())]
       else
         msg = options[rand(options.length())]
       end
@@ -46,10 +43,10 @@ class Choice < Plugin::PluginBase
       msg = "Maybe you should ask a question?"
     end
 
-    bot.reply(event, msg)
+    msg
   end
 
-  def parse_options(txt="")
+  helper :parse_options do |txt|
     options = []
     sre = /\,?\s+or\s+|\,\s+/
 
@@ -61,10 +58,8 @@ class Choice < Plugin::PluginBase
 
     options = txt.split(sre)
     options.collect! {|s| s.strip }
-    return options
+    
+    options
   end
 
-# End Class
 end
-
-register_plugin(Choice)
