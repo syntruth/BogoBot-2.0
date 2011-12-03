@@ -99,14 +99,7 @@ class Plugin
   end
 
   def config
-    # Prevent this from being called outside of the 
-    # on_start and on_stop methods.
-    meth = direct_caller()
-    if meth == "on_start" or meth == "on_stop"
-      return @config
-    else
-      raise PluginError, "config() called outside of the on :start or on :stop blocks!"
-    end
+    @config
   end
 
   def start(conf)
@@ -209,8 +202,8 @@ end
 # to both IRC event handlers and !command handlers.
 class PluginEvent
   def initialize(bot, event, is_command=true)
-    @bot = bot
-    @event = event
+    @bot        = bot
+    @event      = event
     @is_command = is_command
   end
 
@@ -246,6 +239,4 @@ class PluginEvent
   end
 end
 
-# Plugin Error Exception
-class PluginError < Exception
-end
+

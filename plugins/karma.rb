@@ -17,8 +17,6 @@ Plugin.define :karma do
     assign :nicks,      {}
 
     assign :nick_file,  config.get("nick_file", "karma_nicks.dat")
-
-    ensure_file nick_file
     
     storage_file(nick_file) do |fp|
       data = YAML.load(fp.read())
@@ -56,8 +54,7 @@ Plugin.define :karma do
 
   help_for :karma do 
     "{cmd}karma [:command|subject] -- " + 
-    "Commands are :points, :top, :bottom, :average, and :stats. " +
-    "Points will tell you how many karma points you have to spend." +
+    "Commands are :top, :bottom, :average, and :stats. " +
     "Top and Bottom will give the top and bottom 3 karmas." +
     "If given a subject, will report the karma for that subject.\n" + 
     "You can give a subject karma by simply giving the subject followed " +
@@ -95,7 +92,7 @@ Plugin.define :karma do
 
         nicks[nick] = data
         karmas      = get_karmas()
-        msg         = str % [subject, karma, points_left(nick)]
+        msg         = str % [subject, karmas[subject], points_left(nick)]
       end
     end
 
