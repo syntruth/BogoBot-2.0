@@ -10,7 +10,8 @@ Plugin.define :karma do
   assign :karma_re, /^([a-z0-9. ]+?[a-z0-9.])(\+\+|--)\s*?(\d|10)?$/i
 
   on :start do
-    assign :file,       config.get("file", "karma.dat")
+
+    assign :kfile,      config.get("file", "karma.dat")
     assign :points_cap, config.get("points_cap", 10)
     assign :regen,      config.get("regen", 900)
     assign :verbose,    config.get("verbose", false)
@@ -25,7 +26,14 @@ Plugin.define :karma do
   end
 
   on :stop do
-    data = nicks
+    data = {}
+
+    storage_file(nick_file) do |fp|
+      data = YAML.load(fp.read())
+    end
+
+    data.update(nicks)
+
     storage_file(nick_file, "w") do |fp|
       fp.write(YAML.dump(data))
     end
@@ -54,7 +62,9 @@ Plugin.define :karma do
 
   help_for :karma do 
     "{cmd}karma [:command|subject] -- " + 
-    "Commands are :top, :bottom, :average, and :stats. " +
+    "Commands are :points, :top, :bottom, :average, and :stats. " +
+    "Points tells you how many karma points you have left to use." +
+    "Points will regen over time." + 
     "Top and Bottom will give the top and bottom 3 karmas." +
     "If given a subject, will report the karma for that subject.\n" + 
     "You can give a subject karma by simply giving the subject followed " +
@@ -68,31 +78,25 @@ Plugin.define :karma do
     found = parse_karma(event.message)
     nick  = event.from
 
-    update_karma_points(nick)
-
-    data   = nicks[nick]
-    points = data[:points]
-
     if found
+      update_karma_points(nick)
+
       subject = found.first
       karma   = found.last
-      padjust = points - karma.abs
+      padjust = nicks[nick][:points] - karma.abs
 
       if padjust < 0
         msg = "Sorry, #{nick}, but you do not have enough karma " + 
               "points to use. Current karma points: #{points}"
-      elsif subject == event.from.downcase
+      elsif subject == nick.downcase
         msg = "Change must come from within, but you cannot change your own karma."
       else
         str = "The karma for %s is: %s\n%s"
         save_karma(subject, karma)
 
-        data[:points]    = padjust
-        data[:last_used] = Time.now
-
-        nicks[nick] = data
-        karmas      = get_karmas()
-        msg         = str % [subject, karmas[subject], points_left(nick)]
+        nicks[nick] = {:points => padjust, :last_used => Time.now}
+        karma       = get_karmas[subject]
+        msg         = str % [subject, karma, points_left(nick)]
       end
     end
 
@@ -113,8 +117,10 @@ Plugin.define :karma do
     subject = event.message.squeeze(" ").strip.downcase()
 
     if subject.match(/^:/)
-      cmd = subject.sub(/^:/, "").to_sym()
-      msg = karma_command(cmd, event)
+      cmd, data = subject.split(/\s+/, 2)
+
+      cmd = cmd.gsub(/:/, "").to_sym()
+      msg = karma_command(cmd, data, event)
     elsif not subject.empty?
       karmas = get_karmas()
       if karmas.has_key?(subject)
@@ -150,7 +156,7 @@ Plugin.define :karma do
   helper :get_karmas do
     karmas = {}
 
-    storage_file(file) do |fp|
+    storage_file(kfile) do |fp|
       fp.each do |line|
         parts = line.split(/:/).collect {|p| p.strip}
 
@@ -167,7 +173,7 @@ Plugin.define :karma do
   end
 
   helper :save_file do |karmas|    
-    storage_file(file, "w") do |fp|
+    storage_file(kfile, "w") do |fp|
       karmas.sort.each do |key, value|
         fp.write("%s: %s\n" % [key, value])
       end
@@ -177,10 +183,9 @@ Plugin.define :karma do
   end
 
   helper :save_karma do |subject, karma|
-    karma = 1 unless karma.is_a?(Fixnum)
-    karma = 1 if karma.zero?
-
-    karmas = self.get_karmas()
+    karma  = 1 unless karma.is_a?(Fixnum)
+    karma  = 1 if karma.zero?
+    karmas = get_karmas
 
     karmas[subject] = 0 if not karmas.has_key?(subject)
     karmas[subject] += karma
@@ -188,7 +193,7 @@ Plugin.define :karma do
     save_file(karmas)
   end
 
-  helper :karma_command do |cmd, event|
+  helper :karma_command do |cmd, args, event|
     cmd = :top unless cmd.is_a?(Symbol)
 
     karmas = get_karmas()
@@ -203,6 +208,13 @@ Plugin.define :karma do
       nick = event.from
       update_karma_points(nick)
       points_left(nick)
+    when :search
+      found = karma_array.select { |k|
+        k.first.match(/#{args}/)
+      }.collect { |k| 
+        "%s: %s" % [k.first, k.last]
+      }
+      found[0..5].join(", ")
     when :top
       top = karma_array[0..2].collect do |k| 
         "%s: %s" % [k.first, k.last]
@@ -230,15 +242,30 @@ Plugin.define :karma do
   end
 
   helper :update_karma_points do |nick|
-    c = points_cap
+    cap = points_cap
 
     if nicks.has_key?(nick)
-      data = nicks[nick]
-      p    = data[:points] + ((Time.now - data[:last_used]) / regen).to_i
+      # Method: Find how how much time has elapsed since
+      # the last update. The divmod is how many points to
+      # adjust by and the how much time is left until the
+      # next point gain. If the total of points and the
+      # adjust is greater than the cap, set the points to
+      # the cap, else to the total. Set the last_used 
+      # nick value to the time remaining.
+      data   = nicks[nick]
+      points = data[:points]
+      last   = data[:last_used]
+      now    = Time.now
 
-      data[:points] = (p > c) ? c : p
+      left, adjust = (now - last).divmod(regen)
+
+      left   = now - left
+      total  = points + adjust.to_i
+      points = (total > cap) ? cap : total
+
+      data = {:points => points, :last_used => left}
     else
-      data = {:points => c, :last_used => Time.now}
+      data = {:points => cap, :last_used => Time.now}
     end
 
     nicks[nick] = data
