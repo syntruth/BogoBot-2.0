@@ -87,7 +87,7 @@ Plugin.define :karma do
 
       if padjust < 0
         msg = "Sorry, #{nick}, but you do not have enough karma " + 
-              "points to use. Current karma points: #{points}"
+              "points to use. #{points_left(nick)}"
       elsif subject == nick.downcase
         msg = "Change must come from within, but you cannot change your own karma."
       else
