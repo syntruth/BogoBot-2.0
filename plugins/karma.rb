@@ -257,7 +257,7 @@ Plugin.define :karma do
       last   = data[:last_used]
       now    = Time.now
 
-      left, adjust = (now - last).divmod(regen)
+      adjust, left = (now - last).divmod(regen)
 
       left   = now - left
       total  = points + adjust.to_i
