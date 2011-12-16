@@ -3,8 +3,8 @@
 require "rubygems"
 
 # Ensure our local paths are loaded first.
-$LOAD_PATH.insert(0, "./lib")
 $LOAD_PATH.insert(0, "./lib/irc")
+$LOAD_PATH.insert(0, "./lib")
 
 # Local libs
 require 'lib/init'
@@ -17,8 +17,8 @@ require "logger"
 require "pathname"
 require "digest/md5"
 
-BOT_VERSION = "2.1.0"
-BOT_PATH = Dir.pwd()
+BOT_VERSION = "2.1.1"
+BOT_PATH    = Dir.pwd()
 
 # Set our local paths for bot/plugin/storage files.
 CONFIG_DIR = File.join(BOT_PATH, "conf")
@@ -631,11 +631,12 @@ class BogoBot < IRC
   def on_nick(event)
     old_nick = event.old_nick.to_sym()
     new_nick = event.new_nick.to_sym()
+
     if @owners.has_key?(old_nick)
-      @owners[new_nick] = @owners[old_nick].dup()
+      @owners[new_nick]      = @owners.delete(old_nick)
       @owners[new_nick].nick = new_nick.to_s()
-      @owners.delete(old_nick)
     end
+
     return true
   end
 
@@ -816,7 +817,7 @@ class BogoBot < IRC
   #           ignored and NEVER be replied to themselves. This is to prevent
   #           bot's entering infinite message passing loops.
   def send(args={})
-    target = args[:target]
+    target  = args[:target]
     message = args[:message]
 
     return if target.nil? or message.nil?
@@ -851,8 +852,8 @@ class Owner
   attr_reader :is_logged
 
   def initialize(nick, pw)
-    @nick = nick
-    @password = pw
+    @nick      = nick
+    @password  = pw
     @is_logged = false
   end
 
@@ -933,9 +934,9 @@ opts = GetoptLong.new(
   ["--help",   "-h", GetoptLong::NO_ARGUMENT]
 )
 
-config = "default"
+config    = "default"
 do_daemon = false
-debug = false
+debug     = false
   
 opts.each do |opt, arg|
   case opt
@@ -955,7 +956,16 @@ bot = BogoBot.new(config, debug)
 
 if do_daemon
   bot.debug "Daemonizing BogoBot..."
-  Daemons.daemonize()
+  
+  # The following sets our pid file to be the name of
+  # the config file (default.pid for the default bot),
+  # tells it to put daemon logs in the bot's log directory
+  # and finally, tells it to, indeed, log.
+  Daemons.daemonize({
+    :app_name   => config.gsub(/\.conf$/, ''),
+    :log_dir    => LOG_DIR,
+    :log_output => true
+  })
 end
 
 bot.connect()
