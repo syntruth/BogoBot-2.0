@@ -6,9 +6,14 @@ Plugin.define :karma do
   author  "Syn"
   version "1.0"
 
-  # The karma regex matches alphanum, spaces, and the period chars.
-  assign :karma_re, /^([a-z0-9. ]+?[a-z0-9.])(\+\+|--)\s*?(\d|10)?$/i
-
+  # The karma regex
+  assign :karma_re, /([a-zA-Z0-9.\- ]+? # Subject, which is alphanum, spaces
+                      [a-zA-Z0-9.\- ])  # and dash and periods being allowed
+                     (\+\+|--|\+=|-=)   # How to modify
+                     \s*?               # Possible spaces
+                     (\d|10)?$          # Amount to modify (0-10)
+                    /ix                 # ...with 0 == 1 in the logic.
+                              
   on :start do
 
     assign :kfile,      config.get("file", "karma.dat")
@@ -83,20 +88,24 @@ Plugin.define :karma do
 
       subject = found.first
       karma   = found.last
-      padjust = nicks[nick][:points] - karma.abs
+      points  = nicks[nick][:points]
+      padjust = points - karma.abs
 
-      if padjust < 0
-        msg = "Sorry, #{nick}, but you do not have enough karma " + 
-              "points to use. #{points_left(nick)}"
+      msg = if padjust < 0
+        "Sorry, %s, but you do not have enough karma points to use. %s" % [
+          nick,
+          points_left(nick)
+        ]
       elsif subject == nick.downcase
-        msg = "Change must come from within, but you cannot change your own karma."
+        "Change must come from within, but you cannot change your own karma."
       else
         str = "The karma for %s is: %s\n%s"
         save_karma(subject, karma)
 
         nicks[nick] = {:points => padjust, :last_used => Time.now}
         karma       = get_karmas[subject]
-        msg         = str % [subject, karma, points_left(nick)]
+        
+        str % [subject, karma, points_left(nick)]
       end
     end
 
@@ -214,7 +223,11 @@ Plugin.define :karma do
       }.collect { |k| 
         "%s: %s" % [k.first, k.last]
       }
-      found[0..5].join(", ")
+      if found.empty?
+        "No matches found for: #{args}"
+      else
+        found[0..5].join(", ")
+      end
     when :top
       top = karma_array[0..2].collect do |k| 
         "%s: %s" % [k.first, k.last]
