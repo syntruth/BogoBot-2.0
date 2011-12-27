@@ -12,7 +12,7 @@ require 'lib/init'
 # Ruby libs
 require "daemons"
 require "English"
-require "getoptlong"
+require "optparse"
 require "logger"
 require "pathname"
 require "digest/md5"
@@ -31,24 +31,6 @@ DEFAULT_COMMAND_OPTIONS = {
   :owner_only => false,
   :is_private => false
 }
-
-# Usage text.
-USAGE = <<EOF
-
-%s <options>
-
--c, --config=
-  Specifies the config file to use for the bot. Defaults to 'default.conf'. 
-  You do not need to put the '.conf' on the end.
-  Config must be in #{CONFIG_DIR}. 
-
--d, --daemon
-  Puts the Bot into the background. The default is to not daemonize the bot.
-
--h, --help
-  Prints the help text.  You are reading this now. ;)
-
-EOF
 
 # The main Bot class. 
 class BogoBot < IRC
@@ -927,30 +909,39 @@ end
 ############
 #   Main   #
 ############
-opts = GetoptLong.new(
-  ["--config", "-c", GetoptLong::REQUIRED_ARGUMENT],
-  ["--daemon", "-d", GetoptLong::NO_ARGUMENT],
-  ["--debug",        GetoptLong::NO_ARGUMENT],
-  ["--help",   "-h", GetoptLong::NO_ARGUMENT]
-)
 
+# Default values.
 config    = "default"
 do_daemon = false
 debug     = false
-  
-opts.each do |opt, arg|
-  case opt
-  when "-c", "--config"
-    config = arg
-  when "-d", "--daemon"
+
+options = OptionParser.new do |opts|
+  opts.banner = "Usage: %s [options]" % File.basename($0)
+
+  opts.on("-c", "--config [FILE]", 
+          "The bot's config file to use.", 
+          "You do not have to include the the .conf",
+          "on the end of the config name.") do |v|
+    config = v
+  end
+
+  opts.on("-d", "--daemon", 
+          "Puts the Bot into the background.",
+          "The default is to NOT daemonize the bot.") do
     do_daemon = true
-  when "--debug"
+  end
+
+  opts.on("--debug", "Turns on verbose debugging.") do
     debug = true
-  when "-h", "--help"
-    puts USAGE % File.basename($PROGRAM_NAME)
+  end
+
+  opts.on("-h", "--help", "Prints usage message.") do
+    puts opts
     exit
   end
 end
+
+options.parse!
 
 bot = BogoBot.new(config, debug)
 
